@@ -1,0 +1,29 @@
+<svg class="ddb-notes-frame-svg" viewBox="0 0 320 520" preserveAspectRatio="none" aria-hidden="true">
+  <defs>
+    <linearGradient id="__FRAME_GRADIENT_ID__" x1="0" y1="0" x2="0" y2="1">
+      <stop id="__FRAME_STOP_TOP_ID__" offset="0%" stop-color="rgb(16, 22, 26)"></stop>
+      <stop id="__FRAME_STOP_MID_ID__" offset="52%" stop-color="rgb(14, 20, 24)"></stop>
+      <stop id="__FRAME_STOP_BOTTOM_ID__" offset="100%" stop-color="rgb(10, 16, 20)"></stop>
+    </linearGradient>
+    <filter id="__FRAME_SHADOW_ID__" x="-25%" y="-25%" width="150%" height="150%">
+      <feDropShadow dx="0" dy="0" stdDeviation="4" flood-color="rgba(181, 158, 84, 0.5)"></feDropShadow>
+    </filter>
+  </defs>
+  <path d="__SHAPE_PATH__" fill="url(#__FRAME_GRADIENT_ID__)"></path>
+  <path id="__FRAME_STROKE_SHADE_ID__" d="__SHAPE_PATH__" fill="none" stroke="rgba(64, 52, 22, 0.55)" stroke-width="7"></path>
+  <path id="__FRAME_STROKE_MAIN_ID__" d="__SHAPE_PATH__" fill="none" stroke="rgba(181, 158, 84, 0.98)" stroke-width="4.5" filter="url(#__FRAME_SHADOW_ID__)"></path>
+  <path id="__FRAME_STROKE_HIGHLIGHT_ID__" d="__SHAPE_PATH__" fill="none" stroke="rgba(225, 213, 170, 0.72)" stroke-width="1.8"></path>
+</svg>
+
+<div class="ddb-notes-header">
+  <div class="ddb-notes-title-wrap">
+    <div class="ddb-notes-title">Notes</div>
+  </div>
+</div>
+
+<div class="ddb-notes-body">
+  <textarea id="__TEXTAREA_ID__" placeholder="Write your notes here..."></textarea>
+  <div class="ddb-notes-footer">
+    <span id="__SAVE_STATUS_ID__"></span>
+  </div>
+</div>

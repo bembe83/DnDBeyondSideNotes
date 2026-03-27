@@ -1,0 +1,22 @@
+{
+  "manifest_version": 3,
+  "name": "D&D Beyond Notes Sidebar",
+  "version": "1.0.0",
+  "description": "Shows a notes panel on the left side of the D&D Beyond character sheet.",
+  "permissions": ["storage"],
+  "host_permissions": ["https://www.dndbeyond.com/*"],
+  "content_scripts": [
+    {
+      "matches": ["https://www.dndbeyond.com/characters/*"],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["notes-template.html"],
+      "matches": ["https://www.dndbeyond.com/*"]
+    }
+  ]
+}
