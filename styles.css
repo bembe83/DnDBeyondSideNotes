@@ -107,6 +107,32 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ddb-notes-muted);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ddb-notes-font-controls {
+  display: flex;
+  gap: 4px;
+}
+
+.ddb-notes-font-btn {
+  background: transparent;
+  border: 1px solid var(--ddb-notes-border-soft);
+  color: var(--ddb-notes-muted);
+  cursor: pointer;
+  font-size: 11px;
+  font-family: inherit;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border-radius: 3px;
+  line-height: 1;
+}
+
+.ddb-notes-font-btn:hover {
+  border-color: var(--ddb-notes-border);
+  color: var(--ddb-notes-text);
 }
 
 @media (max-width: 900px) {

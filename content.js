@@ -2,6 +2,13 @@
   const EXT_ROOT_ID = "ddb-notes-sidebar-root";
   const TEXTAREA_ID = "ddb-notes-sidebar-textarea";
   const SAVE_STATUS_ID = "ddb-notes-sidebar-status";
+  const FONT_DECREASE_ID = "ddb-notes-font-decrease";
+  const FONT_INCREASE_ID = "ddb-notes-font-increase";
+  const FONT_SIZE_KEY = "ddb_notes_font_size";
+  const FONT_SIZE_MIN = 10;
+  const FONT_SIZE_MAX = 24;
+  const FONT_SIZE_DEFAULT = 13;
+  const CHUNK_SIZE = 7000;
   const FRAME_GRADIENT_ID = "ddb-notes-fill-gradient";
   const FRAME_STOP_TOP_ID = "ddb-notes-fill-stop-top";
   const FRAME_STOP_MID_ID = "ddb-notes-fill-stop-mid";
@@ -21,7 +28,6 @@
   let lastCharacterThemeId = "";
   let templateHtmlCache = "";
   let sidebarCreatePromise = null;
-  let isSyncingNativeNotes = false;
 
   function getViewportIntersectionArea(rect) {
     const vx1 = 0;
@@ -85,9 +91,21 @@
 
   function saveNotes(value) {
     const key = getStorageKey();
-    chrome.storage.local.set({ [key]: value }, () => {
-      setStatus("Saved");
-      setTimeout(() => setStatus(""), 1200);
+    const chunks = [];
+    for (let i = 0; i < value.length; i += CHUNK_SIZE) chunks.push(value.slice(i, i + CHUNK_SIZE));
+    if (!chunks.length) chunks.push("");
+
+    chrome.storage.sync.get(`${key}_meta`, (res) => {
+      const prevCount = res[`${key}_meta`]?.chunks ?? 0;
+      const toSet = { [`${key}_meta`]: { chunks: chunks.length } };
+      chunks.forEach((c, i) => { toSet[`${key}_c${i}`] = c; });
+      chrome.storage.sync.set(toSet, () => {
+        const toRemove = [];
+        for (let i = chunks.length; i < prevCount; i++) toRemove.push(`${key}_c${i}`);
+        if (toRemove.length) chrome.storage.sync.remove(toRemove);
+        setStatus("Saved");
+        setTimeout(() => setStatus(""), 1200);
+      });
     });
   }
 
@@ -95,180 +113,26 @@
 
   function loadNotes(callback) {
     const key = getStorageKey();
-    chrome.storage.local.get([key], (result) => {
-      callback(result[key] || "");
+    chrome.storage.sync.get(`${key}_meta`, (metaRes) => {
+      const meta = metaRes[`${key}_meta`];
+      if (!meta?.chunks) { callback(""); return; }
+      const chunkKeys = Array.from({ length: meta.chunks }, (_, i) => `${key}_c${i}`);
+      chrome.storage.sync.get(chunkKeys, (res) => {
+        callback(chunkKeys.map(k => res[k] || "").join(""));
+      });
     });
   }
 
-  function findNativeNotesSection(root) {
-    if (!root) return null;
-    const notesSections = [...root.querySelectorAll(".ct-notes")];
-    if (!notesSections.length) return null;
+  let currentFontSize = FONT_SIZE_DEFAULT;
 
-    // Prefer the section that actually contains note entries; visibility is optional
-    // because D&D Beyond can keep notes collapsed in the DOM at initial load.
-    const ranked = notesSections
-      .map((section) => ({
-        section,
-        noteCount: section.querySelectorAll(".ct-notes__note").length,
-        visible: isElementVisible(section) ? 1 : 0
-      }))
-      .sort((a, b) => {
-        if (b.noteCount !== a.noteCount) return b.noteCount - a.noteCount;
-        return b.visible - a.visible;
-      });
-
-    return ranked[0]?.section || null;
+  function loadFontSize(callback) {
+    chrome.storage.sync.get(FONT_SIZE_KEY, (res) => {
+      callback(res[FONT_SIZE_KEY] || FONT_SIZE_DEFAULT);
+    });
   }
 
-  function findLastNativeNote(root) {
-    const notesSection = findNativeNotesSection(root);
-    if (!notesSection) return null;
-
-    const noteItems = [...notesSection.querySelectorAll(".ct-notes__note")];
-    if (!noteItems.length) return null;
-
-    return noteItems[noteItems.length - 1] || null;
-  }
-
-  function findNativeNotesInput(root) {
-    const lastNote = findLastNativeNote(root);
-    if (!lastNote) return null;
-
-    // Prefer real editable controls inside the last note block.
-    const editableChild =
-      lastNote.querySelector("textarea") ||
-      lastNote.querySelector("[contenteditable='true']") ||
-      lastNote.querySelector("[role='textbox']") ||
-      lastNote.querySelector("input[type='text']");
-
-    if (editableChild && !editableChild.closest(`#${EXT_ROOT_ID}`)) {
-      return editableChild;
-    }
-
-    // Some builds put the editor role/contenteditable on the note element itself.
-    const isEditableSelf =
-      lastNote.tagName === "TEXTAREA" ||
-      lastNote.getAttribute("contenteditable") === "true" ||
-      lastNote.getAttribute("role") === "textbox";
-
-    if (isEditableSelf && !lastNote.closest(`#${EXT_ROOT_ID}`)) {
-      return lastNote;
-    }
-
-    return null;
-  }
-
-  function normalizeNotesText(text) {
-    return (text || "")
-      .replace(/\r\n?/g, "\n")
-      .replace(/\u00a0/g, " ")
-      .replace(/[ \t]+\n/g, "\n")
-      .trim();
-  }
-
-  function getLastNoteDisplayText(root) {
-    const lastNote = findLastNativeNote(root);
-    if (!lastNote) return "";
-
-    const preferredTextNode =
-      lastNote.querySelector(".ct-notes__note-content") ||
-      lastNote.querySelector(".ct-notes__text") ||
-      lastNote.querySelector(".ddbc-markdown") ||
-      lastNote.querySelector(".ddbc-html-content") ||
-      lastNote;
-
-    return normalizeNotesText(preferredTextNode.innerText || preferredTextNode.textContent || "");
-  }
-
-  function getEditableValue(el) {
-    if (!el) return "";
-    if ("value" in el) return el.value || "";
-    return el.textContent || "";
-  }
-
-  function setTextareaLikeValue(el, value) {
-    const proto = Object.getPrototypeOf(el);
-    const descriptor = Object.getOwnPropertyDescriptor(proto, "value");
-    if (descriptor?.set) {
-      descriptor.set.call(el, value);
-    } else {
-      el.value = value;
-    }
-  }
-
-  function setEditableValue(el, value) {
-    if (!el) return;
-    if ("value" in el) {
-      setTextareaLikeValue(el, value);
-    } else {
-      el.textContent = value;
-    }
-
-    el.dispatchEvent(new Event("input", { bubbles: true }));
-    el.dispatchEvent(new Event("change", { bubbles: true }));
-  }
-
-  function getNativeNotesValue(root, nativeInput = null) {
-    if (nativeInput) {
-      const editableValue = normalizeNotesText(getEditableValue(nativeInput));
-      if (editableValue) return editableValue;
-    }
-
-    return getLastNoteDisplayText(root);
-  }
-
-  function syncSidebarFromNative(root, nativeInput = null) {
-    const sidebarTextarea = document.getElementById(TEXTAREA_ID);
-    if (!sidebarTextarea) return;
-
-    const nativeValue = getNativeNotesValue(root, nativeInput);
-    if (sidebarTextarea.value === nativeValue) return;
-
-    isSyncingNativeNotes = true;
-    sidebarTextarea.value = nativeValue;
-    saveNotes(nativeValue);
-    setStatus("Synced");
-    setTimeout(() => setStatus(""), 1200);
-    isSyncingNativeNotes = false;
-  }
-
-  function syncSidebarToNative(value, root = findCharacterRoot()) {
-    if (isSyncingNativeNotes) return;
-
-    const nativeInput = findNativeNotesInput(root);
-    if (!nativeInput) return;
-    if (getEditableValue(nativeInput) === value) return;
-
-    isSyncingNativeNotes = true;
-    setEditableValue(nativeInput, value);
-    isSyncingNativeNotes = false;
-  }
-
-  function ensureNativeNotesSync(root) {
-    const nativeInput = findNativeNotesInput(root);
-
-    if (nativeInput && !nativeInput.dataset.ddbNotesSidebarBound) {
-      nativeInput.dataset.ddbNotesSidebarBound = "true";
-      nativeInput.addEventListener("input", () => {
-        if (isSyncingNativeNotes) return;
-        syncSidebarFromNative(root, nativeInput);
-      });
-      nativeInput.addEventListener("change", () => {
-        if (isSyncingNativeNotes) return;
-        syncSidebarFromNative(root, nativeInput);
-      });
-    }
-
-    const sidebarTextarea = document.getElementById(TEXTAREA_ID);
-    if (!sidebarTextarea) return;
-
-    const nativeValue = getNativeNotesValue(root, nativeInput);
-    if (nativeValue.trim()) {
-      syncSidebarFromNative(root, nativeInput);
-    } else if (sidebarTextarea.value.trim()) {
-      syncSidebarToNative(sidebarTextarea.value, root);
-    }
+  function saveFontSize(size) {
+    chrome.storage.sync.set({ [FONT_SIZE_KEY]: size });
   }
 
   function findCharacterRoot() {
@@ -400,6 +264,10 @@
         <textarea id="${TEXTAREA_ID}" placeholder="Write your notes here..."></textarea>
         <div class="ddb-notes-footer">
           <span id="${SAVE_STATUS_ID}"></span>
+          <div class="ddb-notes-font-controls">
+            <button id="${FONT_DECREASE_ID}" class="ddb-notes-font-btn">A-</button>
+            <button id="${FONT_INCREASE_ID}" class="ddb-notes-font-btn">A+</button>
+          </div>
         </div>
       </div>
     `;
@@ -766,7 +634,9 @@
             SHAPE_PATH,
             CHARACTER_ID: characterId,
             TEXTAREA_ID,
-            SAVE_STATUS_ID
+            SAVE_STATUS_ID,
+            FONT_DECREASE_ID,
+            FONT_INCREASE_ID
           })
         : getTemplateFallbackHtml(characterId);
 
@@ -780,12 +650,31 @@
       });
 
       textarea.addEventListener("input", (e) => {
-        if (!isSyncingNativeNotes) {
-          syncSidebarToNative(e.target.value);
-        }
         setStatus("Saving...");
         debouncedSave(e.target.value);
       });
+
+      loadFontSize((size) => {
+        currentFontSize = size;
+        textarea.style.fontSize = `${size}px`;
+      });
+
+      const fontDecreaseBtn = root.querySelector(`#${FONT_DECREASE_ID}`);
+      const fontIncreaseBtn = root.querySelector(`#${FONT_INCREASE_ID}`);
+      if (fontDecreaseBtn) {
+        fontDecreaseBtn.addEventListener("click", () => {
+          currentFontSize = Math.max(FONT_SIZE_MIN, currentFontSize - 1);
+          textarea.style.fontSize = `${currentFontSize}px`;
+          saveFontSize(currentFontSize);
+        });
+      }
+      if (fontIncreaseBtn) {
+        fontIncreaseBtn.addEventListener("click", () => {
+          currentFontSize = Math.min(FONT_SIZE_MAX, currentFontSize + 1);
+          textarea.style.fontSize = `${currentFontSize}px`;
+          saveFontSize(currentFontSize);
+        });
+      }
 
       return root;
     })().finally(() => {
@@ -843,8 +732,6 @@
     clearThemeRetry();
     sidebar.style.visibility = "visible";
     themeRetryCount = 0;
-
-    ensureNativeNotesSync(root);
 
     const anchor = combatStatuses || healthCard || sensesCard;
     const sidebarWidth = 320;
